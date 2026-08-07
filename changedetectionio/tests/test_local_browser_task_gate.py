@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 import pytest
 
@@ -126,3 +127,71 @@ def test_waiter_queued_before_attention_does_not_slip_through(gate):
         assert "B-start" in log
 
     asyncio.run(main())
+
+
+def test_gate_is_safe_across_worker_threads():
+    """worker_pool gives each worker its own thread + event loop. The gate must
+    serialize across those loops without binding asyncio primitives to one loop
+    (which would raise 'bound to a different event loop')."""
+    results = {}
+
+    def run_in_thread(name, hold_time, fail_list):
+        def _run():
+            try:
+                async def _body():
+                    async with gate.acquire(name):
+                        results[name] = "held"
+                        await asyncio.sleep(hold_time)
+                asyncio.run(_body())
+            except Exception as e:  # pragma: no cover - failure path
+                fail_list.append(str(e))
+        t = threading.Thread(target=_run)
+        t.start()
+        return t
+
+    gate = LocalBrowserTaskGate()
+    failures = []
+    t1 = run_in_thread("a", 0.2, failures)
+    # Give A time to acquire the lock before B starts.
+    import time
+    time.sleep(0.05)
+    t2 = run_in_thread("b", 0.05, failures)
+
+    # While B holds the gate, a third thread must NOT enter.
+    t3 = run_in_thread("c", 0.05, failures)
+    t1.join()
+    t2.join()
+    t3.join()
+
+    assert failures == [], f"gate crashed across threads: {failures}"
+    assert results.get("a") == "held"
+    assert results.get("b") == "held"
+    assert results.get("c") == "held"
+
+
+def test_attention_blocks_across_threads_until_resolved():
+    gate = LocalBrowserTaskGate()
+    blocked = []
+    failures = []
+
+    def run_blocked():
+        def _run():
+            try:
+                async def _body():
+                    async with gate.acquire("watch-B"):
+                        blocked.append("B-ran")
+                asyncio.run(_body())
+            except Exception as e:  # pragma: no cover - failure path
+                failures.append(str(e))
+        t = threading.Thread(target=_run)
+        t.start()
+        return t
+
+    gate.enter_attention("watch-A")
+    t = run_blocked()
+    import time
+    time.sleep(0.1)
+    assert blocked == [], "attention did not block the other thread"
+    gate.resolve_attention()
+    t.join()
+    assert blocked == ["B-ran"], failures
