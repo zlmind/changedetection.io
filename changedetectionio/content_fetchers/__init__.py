@@ -49,6 +49,10 @@ def available_fetchers():
             if name.startswith('html_'):
                 # Skip plugin fetchers that were already registered
                 if name not in _plugin_fetchers:
+                    # Hidden fetchers (e.g. html_local_chrome) are added to the
+                    # choices by the views only when available, never by default.
+                    if not getattr(obj, 'selectable_in_ui', True):
+                        continue
                     t = tuple([name, obj.fetcher_description])
                     p.append(t)
 
@@ -190,6 +194,12 @@ if use_playwright_as_chrome_fetcher:
 else:
     logger.debug("Falling back to selenium as fetcher")
     from .webdriver_selenium import fetcher as html_webdriver
+
+# Local Chrome persistent-profile backend (Windows Phase 1). Imported on all
+# platforms so resolve_content_fetcher() can find it for already-configured
+# watches and report a clean error; selectable_in_ui=False keeps it out of the
+# default UI choices. Views add it to the choices only when Windows + enabled.
+from .local_chrome import fetcher as html_local_chrome
 
 
 # Register built-in fetchers as plugins after all imports are complete

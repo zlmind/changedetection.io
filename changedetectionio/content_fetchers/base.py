@@ -96,6 +96,11 @@ class Fetcher():
     supports_screenshots = False        # Can capture page screenshots
     supports_xpath_element_data = False # Can extract xpath element positions/data for visual selector
 
+    # Fetcher appears in the UI fetch-backend choices by default. Set to False
+    # on fetchers that the views add conditionally (e.g. html_local_chrome,
+    # which is only offered on Windows + when enabled).
+    selectable_in_ui = True
+
     # Screenshot element locking - prevents layout shifts during screenshot capture
     # Only needed for visual comparison (image_ssim_diff processor)
     # Locks element dimensions in the first viewport to prevent headers/ads from resizing

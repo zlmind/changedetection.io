@@ -179,11 +179,3 @@ class fetcher(Fetcher):
         # The persistent context and Chrome are owned by LocalChromeManager.
         return
 
-
-# Plugin registration mirrors the other built-in fetchers.
-class LocalChromeFetcherPlugin:
-    def register_content_fetcher(self):
-        return ('html_local_chrome', fetcher)
-
-
-local_chrome_plugin = LocalChromeFetcherPlugin()

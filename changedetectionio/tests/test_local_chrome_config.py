@@ -58,3 +58,24 @@ def test_is_local_chrome_enabled_reads_datastore():
     class _DSMissing:
         data = {'settings': {'requests': {}}}
     assert is_local_chrome_enabled(_DSMissing()) is False
+
+
+def test_html_local_chrome_hidden_from_default_available_fetchers():
+    from changedetectionio import content_fetchers
+    names = [n for n, _ in content_fetchers.available_fetchers()]
+    assert 'html_local_chrome' not in names  # gated; views add it when enabled
+
+
+def test_resolve_content_fetcher_finds_html_local_chrome():
+    """Already-configured watches still resolve to the class (so it can error cleanly)."""
+    from changedetectionio import content_fetchers
+    from changedetectionio.content_fetchers.local_chrome import fetcher as lc_fetcher
+
+    class _Watch(dict):
+        pass
+    class _DS:
+        data = {'settings': {'application': {'fetch_backend': 'html_requests'}}}
+    w = _Watch(fetch_backend='html_local_chrome')
+    obj, name, url = content_fetchers.resolve_content_fetcher(watch=w, datastore=_DS())
+    assert obj is lc_fetcher
+    assert name == 'html_local_chrome'
