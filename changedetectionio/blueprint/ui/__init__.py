@@ -11,6 +11,23 @@ from changedetectionio.blueprint.ui.views import construct_blueprint as construc
 from changedetectionio.blueprint.ui.queue import construct_blueprint as construct_queue_blueprint
 from changedetectionio.blueprint.ui import diff, preview
 
+def _resolve_local_chrome_attention(uuid):
+    """If uuid is the watch blocked in the Local Chrome attention state, treat
+    the action as 'handled, recheck' and unblock the task gate (spec 11).
+
+    No-op when the feature isn't the blocked watch; the gate stays blocked for
+    unrelated watches.
+    """
+    try:
+        from changedetectionio.local_browser.task_gate import get_gate
+        gate = get_gate()
+        if gate.attention_watch_uuid() == uuid:
+            gate.resolve_attention()
+    except Exception:
+        # Never let attention cleanup break the requested operation.
+        pass
+
+
 def _handle_operations(op, uuids, datastore, worker_pool, update_q, queuedWatchMetaData, watch_check_update, extra_data=None, emit_flash=True):
     """Apply a bulk operation to the given watch uuids.
 
@@ -67,6 +84,9 @@ def _handle_operations(op, uuids, datastore, worker_pool, update_q, queuedWatchM
     elif (op == 'recheck'):
         for uuid in uuids:
             if datastore.data['watching'].get(uuid):
+                # A recheck on the attention-blocked watch means 'handled, recheck'
+                # (spec 11) - unblock the gate so the fresh check can run.
+                _resolve_local_chrome_attention(uuid)
                 # Recheck and require a full reprocessing
                 worker_pool.queue_item_async_safe(update_q, queuedWatchMetaData.PrioritizedItem(priority=1, item={'uuid': uuid}))
         result_message = gettext("{} watches queued for rechecking").format(len(uuids))
@@ -312,6 +332,9 @@ def construct_blueprint(datastore: ChangeDetectionStore, update_q, worker_pool, 
             if worker_pool.is_watch_running(uuid) or uuid in update_q.get_queued_uuids():
                 flash(gettext("Watch is already queued or being checked."))
             else:
+                # A recheck on the attention-blocked watch means 'handled, recheck'
+                # (spec 11) - unblock the gate so the fresh check can run.
+                _resolve_local_chrome_attention(uuid)
                 worker_pool.queue_item_async_safe(update_q, queuedWatchMetaData.PrioritizedItem(priority=1, item={'uuid': uuid}))
                 flash(gettext("Queued 1 watch for rechecking."))
         else:
@@ -382,6 +405,28 @@ def construct_blueprint(datastore: ChangeDetectionStore, update_q, worker_pool, 
                 flash(gettext("Queueing watches for rechecking in background..."))
 
         return redirect(url_for('watchlist.index', **wl_filters.filter_query_args(request.args)))
+
+    @ui_blueprint.route("/local-chrome/cancel", methods=['POST'])
+    @login_optionally_required
+    def local_chrome_cancel_attention():
+        """Cancel a Local Chrome attention block for a watch (spec 11).
+
+        Unblocks the task gate so other local-chrome tasks can proceed. The
+        retained login tab stays open in Chrome; the user may close it or log in
+        later. Does NOT delete the watch or its history.
+        """
+        uuid = (request.form.get('uuid') or request.values.get('uuid') or '').strip()
+        if not uuid:
+            return {'ok': False, 'error': 'missing uuid'}, 400
+
+        from changedetectionio.local_browser.task_gate import get_gate
+        gate = get_gate()
+        if gate.attention_watch_uuid() != uuid:
+            return {'ok': False, 'error': 'uuid not in attention state'}, 404
+
+        gate.cancel_attention()
+        # Surface as plain JSON; the watch row re-renders via socket.io.
+        return {'ok': True}
 
     @ui_blueprint.route("/form/checkbox-operations", methods=['POST'])
     @login_optionally_required

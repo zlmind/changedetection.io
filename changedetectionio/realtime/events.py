@@ -40,7 +40,17 @@ def register_watch_operation_handlers(socketio, datastore):
                 from changedetectionio.flask_app import update_q
                 from changedetectionio import queuedWatchMetaData
                 from changedetectionio import worker_pool
-                
+
+                # A recheck on the attention-blocked watch means 'handled, recheck'
+                # (spec 11) - unblock the gate so the fresh check can run.
+                try:
+                    from changedetectionio.local_browser.task_gate import get_gate
+                    gate = get_gate()
+                    if gate.attention_watch_uuid() == uuid:
+                        gate.resolve_attention()
+                except Exception:
+                    pass
+
                 worker_pool.queue_item_async_safe(update_q, queuedWatchMetaData.PrioritizedItem(priority=1, item={'uuid': uuid}))
                 logger.info(f"Socket.IO: Queued recheck for watch {uuid}")
             else:

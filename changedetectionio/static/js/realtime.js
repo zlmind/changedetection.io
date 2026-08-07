@@ -27,6 +27,28 @@ $(document).ready(function () {
         });
 
 
+        // Local Chrome 'cancel check' - unblocks the attention-blocked gate
+        // without re-running the watch (spec 11). The cancel URL is injected by
+        // the template as localChromeCancelURL (static JS has no url_for).
+        $('.local-chrome-cancel').on('click.socketHandlerNamespace', function (e) {
+            e.preventDefault();
+            const uuid = $(this).data('uuid');
+            const $btn = $(this).addClass('is-busy');
+            if (!window.localChromeCancelURL) { location.reload(); return false; }
+            $.post(window.localChromeCancelURL, { uuid: uuid })
+                .done(function () {
+                    // Force a refresh so the watch row re-renders without the button.
+                    if (window.cdioSocket) {
+                        window.cdioSocket.emit('watch_operation', { op: 'recheck', uuid: uuid });
+                    } else {
+                        location.reload();
+                    }
+                })
+                .fail(function () { $btn.removeClass('is-busy'); });
+            return false;
+        });
+
+
         // Only the actual operation buttons carry name="op"; this excludes UI-only
         // buttons in the bar such as "Invert" (client-side selection toggle).
         $('#checkbox-operations button[name="op"]').on('click.socketHandlerNamespace', function (e) {
