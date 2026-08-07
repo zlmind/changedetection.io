@@ -11,6 +11,8 @@ from flask_babel import gettext
 from changedetectionio.store import ChangeDetectionStore
 from changedetectionio.auth_decorator import login_optionally_required
 from changedetectionio.model.LLMSettings import LLMSettings
+from changedetectionio.local_browser import is_local_chrome_supported, is_local_chrome_enabled
+from changedetectionio.local_browser.manager import get_manager
 
 
 def construct_blueprint(datastore: ChangeDetectionStore):
@@ -150,6 +152,11 @@ def construct_blueprint(datastore: ChangeDetectionStore):
                 datastore.data['settings']['requests'].update(form.data['requests'])
                 datastore.commit()
 
+                # local_chrome is a nested sub-form; merge its fields explicitly.
+                lc = form.data.get('requests', {}).get('local_chrome') or {}
+                datastore.data['settings']['requests'].setdefault('local_chrome', {})
+                datastore.data['settings']['requests']['local_chrome'].update(lc)
+
                 # Clear all checksums to force reprocessing with new settings
                 # Global settings can affect watch behavior (filters, rendering, etc.)
                 datastore.clear_all_last_checksums()
@@ -248,6 +255,22 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         # Cost display: only when user configured their own key (not hosted/operator-managed)
         llm_show_costs = not llm_env_configured
 
+        # Append html_local_chrome to the fetch-backend choices only when available.
+        if is_local_chrome_supported() and is_local_chrome_enabled(datastore):
+            from changedetectionio.content_fetchers.local_chrome import fetcher as lc_fetcher
+            choices = list(form.application.form.fetch_backend.choices)
+            if 'html_local_chrome' not in [c[0] for c in choices]:
+                choices.append(('html_local_chrome', lc_fetcher.fetcher_description))
+            form.application.form.fetch_backend.choices = choices
+
+        local_chrome_profile_dir = ''
+        local_chrome_status = 'Not supported on this platform'
+        if is_local_chrome_supported():
+            mgr = get_manager(datastore.datastore_path)
+            local_chrome_profile_dir = mgr.profile_dir
+            st = mgr.status()
+            local_chrome_status = 'Running (PID {}, port {})'.format(st['pid'], st['cdp_port']) if st['running'] else 'Not running'
+
         output = render_template("settings.html",
                                 active_plugins=active_plugins,
                                 api_key=datastore.data['settings']['application'].get('api_access_token'),
@@ -266,6 +289,8 @@ def construct_blueprint(datastore: ChangeDetectionStore):
                                 extra_notification_token_placeholder_info=datastore.get_unique_notification_token_placeholders_available(),
                                 form=form,
                                 hide_remove_pass=os.getenv("SALTED_PASS", False),
+                                local_chrome_profile_dir=local_chrome_profile_dir,
+                                local_chrome_status=local_chrome_status,
                                 min_system_recheck_seconds=int(os.getenv('MINIMUM_SECONDS_RECHECK_TIME', 3)),
                                 settings_application=datastore.data['settings']['application'],
                                 timezone_default_config=datastore.data['settings']['application'].get('scheduler_timezone_default'),
@@ -320,5 +345,39 @@ def construct_blueprint(datastore: ChangeDetectionStore):
             flash(gettext("All notifications unmuted."), 'notice')
 
         return redirect(url_for('watchlist.index'))
+
+    def mc_path(lc_cfg, mgr):
+        return lc_cfg.get('chrome_executable') or None
+
+    @settings_blueprint.route("/local-chrome/open", methods=['GET'])
+    @login_optionally_required
+    def local_chrome_open():
+        if not is_local_chrome_supported() or not is_local_chrome_enabled(datastore):
+            flash(gettext("Local Chrome is not enabled."), "error")
+            return redirect(url_for('settings.settings_page') + '#local-chrome')
+        mgr = get_manager(datastore.datastore_path)
+        try:
+            lc = datastore.data['settings']['requests'].get('local_chrome', {})
+            mgr.ensure_running(chrome_path=mc_path(lc, mgr))
+            flash(gettext("Local Chrome is running. Switch to its window to log in."), 'notice')
+        except Exception as e:
+            flash(gettext("Could not start Local Chrome: {}").format(str(e)), "error")
+        return redirect(url_for('settings.settings_page') + '#local-chrome')
+
+    @settings_blueprint.route("/local-chrome/restart", methods=['GET'])
+    @login_optionally_required
+    def local_chrome_restart():
+        if not is_local_chrome_supported() or not is_local_chrome_enabled(datastore):
+            flash(gettext("Local Chrome is not enabled."), "error")
+            return redirect(url_for('settings.settings_page') + '#local-chrome')
+        mgr = get_manager(datastore.datastore_path)
+        try:
+            mgr.stop()
+            lc = datastore.data['settings']['requests'].get('local_chrome', {})
+            mgr.ensure_running(chrome_path=mc_path(lc, mgr))
+            flash(gettext("Local Chrome restarted."), 'notice')
+        except Exception as e:
+            flash(gettext("Could not restart Local Chrome: {}").format(str(e)), "error")
+        return redirect(url_for('settings.settings_page') + '#local-chrome')
 
     return settings_blueprint

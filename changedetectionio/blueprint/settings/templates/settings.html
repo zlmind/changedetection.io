@@ -21,6 +21,7 @@
             <li class="tab"><a href="{{ url_for('backups.create') }}">{{ _('Backups') }}</a></li>
             <li class="tab"><a href="#timedate">{{ _('Time & Date') }}</a></li>
             <li class="tab"><a href="#proxies">{{ _('CAPTCHA & Proxies') }}</a></li>
+            <li class="tab"><a href="#local-chrome">{{ _('Local Chrome') }}</a></li>
             {% if plugin_tabs %}
                 {% for tab in plugin_tabs %}
             <li class="tab"><a href="#plugin-{{ tab.plugin_id }}">{{ tab.tab_label }}</a></li>
@@ -358,6 +359,30 @@ nav
                     </p>
                     {{ render_fieldlist_with_inline_errors(form.requests.form.extra_browsers) }}
                 </div>
+            </div>
+            <div class="tab-pane-inner" id="local-chrome">
+                <fieldset>
+                    <legend>{{ _('Local Chrome - Persistent Profile') }}</legend>
+                    <div class="pure-control-group">
+                        {{ render_checkbox_field(form.requests.form.local_chrome.form.enabled) }}
+                        <span class="pure-form-message-inline">{{ _('Run a visible Google Chrome with a dedicated persistent profile, so you can log in once and reuse that session. Windows only.') }}</span>
+                    </div>
+                    <div class="pure-control-group">
+                        {{ form.requests.form.local_chrome.form.chrome_executable.label }}
+                        {{ form.requests.form.local_chrome.form.chrome_executable(class="pure-input-2-3") }}
+                        <span class="pure-form-message-inline">{{ _('Leave blank to auto-detect the installed Google Chrome.') }}</span>
+                    </div>
+                    <div class="pure-control-group">
+                        <span class="pure-form-message-inline">{{ _('Profile path (read-only):') }} <code>{{ local_chrome_profile_dir }}</code></span>
+                    </div>
+                    <div class="pure-control-group">
+                        <span class="pure-form-message-inline">{{ _('Browser status:') }} {{ local_chrome_status }}</span>
+                    </div>
+                    <div class="pure-control-group">
+                        <a class="pure-button button-secondary" href="{{ url_for('settings.local_chrome_open') }}">{{ _('Open browser') }}</a>
+                        <a class="pure-button button-secondary" href="{{ url_for('settings.local_chrome_restart') }}">{{ _('Restart browser') }}</a>
+                    </div>
+                </fieldset>
             </div>
             {% if plugin_tabs %}
                 {% for tab in plugin_tabs %}
