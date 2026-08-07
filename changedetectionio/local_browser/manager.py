@@ -69,3 +69,20 @@ class LocalChromeManager:
             "--no-first-run",
             "--no-default-browser-check",
         ]
+
+    # --- DevToolsActivePort parsing (spec 7.3) ---
+    def parse_devtools_active_port(self) -> int | None:
+        """Read the actual debugging port Chrome wrote to the profile dir.
+
+        Chrome writes DevToolsActivePort (port on line 1, ws path on line 2)
+        once it opens the CDP endpoint. Returns None if absent/unreadable.
+        """
+        path = os.path.join(self.profile_dir, "DevToolsActivePort")
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                first_line = f.readline().strip()
+            return int(first_line)
+        except (ValueError, OSError):
+            return None

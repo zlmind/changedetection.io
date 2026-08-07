@@ -70,3 +70,24 @@ def test_build_startup_args_uses_dedicated_profile_and_loopback(manager, tmp_pat
     assert "--headless" not in " ".join(args2)
     # Visible window: no --headless flag added by us.
     assert "--headless" not in " ".join(args)
+
+
+def test_parse_devtools_active_port_returns_port(manager, tmp_path):
+    port_file = manager.profile_dir
+    os.makedirs(port_file, exist_ok=True)
+    path = os.path.join(port_file, "DevToolsActivePort")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("52341\n/devtools/browser/abc-123\n")
+    assert manager.parse_devtools_active_port() == 52341
+
+
+def test_parse_devtools_active_port_missing_returns_none(manager):
+    assert manager.parse_devtools_active_port() is None
+
+
+def test_parse_devtools_active_port_garbage_returns_none(manager, tmp_path):
+    os.makedirs(manager.profile_dir, exist_ok=True)
+    path = os.path.join(manager.profile_dir, "DevToolsActivePort")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("not-a-number\n")
+    assert manager.parse_devtools_active_port() is None
