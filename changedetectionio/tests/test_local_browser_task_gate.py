@@ -51,7 +51,7 @@ def test_attention_blocks_other_tasks_until_resolved(gate):
     async def first():
         async with gate.acquire("watch-A"):
             log.append("A-start")
-            gate.enter_attention("watch-A")  # release lock, block others
+            gate.enter_attention("watch-A")  # clear event so others queue; A releases via __aexit__
             log.append("A-attention")
 
     async def second():
