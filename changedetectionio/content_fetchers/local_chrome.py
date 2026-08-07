@@ -16,18 +16,13 @@ from changedetectionio.content_fetchers import (
 )
 from changedetectionio.content_fetchers.base import Fetcher
 from changedetectionio.content_fetchers.exceptions import (
-    EmptyReply, Non200ErrorCodeReceived, LocalChromeAttentionRequired,
+    EmptyReply, Non200ErrorCodeReceived, PageUnloadable, LocalChromeAttentionRequired,
 )
 from changedetectionio.content_fetchers.playwright import capture_full_page_async
 from changedetectionio.local_browser import is_local_chrome_supported, is_local_chrome_enabled
 from changedetectionio.local_browser.manager import get_manager, LocalChromeUnavailable
 from changedetectionio.local_browser.task_gate import get_gate
 from changedetectionio.local_browser.auth_detector import detect_auth_challenge
-
-# Runtime map: watch_uuid -> CDP target_id, for paused (attention) tabs.
-# In-memory only; changedetection.io owns the Chrome process and closes it on
-# exit, so no cross-process recovery is needed (spec 9.2).
-_target_ids: dict = {}
 
 
 class fetcher(Fetcher):
@@ -81,23 +76,30 @@ class fetcher(Fetcher):
         chrome_path = manager.find_chrome_executable(custom_path=chrome_path)
         manager.ensure_running(chrome_path=chrome_path)
 
+        # Phase 1: the persistent profile owns cookies/UA, so per-watch
+        # request_headers/method/body/is_binary are intentionally not applied
+        # (the proxy_override is also ignored - see __init__).
         async with gate.acquire(watch_uuid):
             from playwright.async_api import async_playwright
             async with async_playwright() as p:
                 browser = await p.chromium.connect_over_cdp(manager.cdp_endpoint(), timeout=60000)
                 # Reuse the persistent default context; never new_context() (spec 9.1).
-                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                if not browser.contexts:
+                    raise LocalChromeUnavailable(
+                        "Chrome has no persistent browser context; the dedicated profile may not be in use."
+                    )
+                context = browser.contexts[0]
                 page = await context.new_page()
-                try:
-                    target_id = await self._read_target_id(page)
-                    if target_id:
-                        _target_ids[watch_uuid] = target_id
-                except Exception as e:
-                    logger.debug(f"Could not read CDP target id: {e}")
+                # Phase 1: the attention tab is kept open in Chrome (see the
+                # `attention` flag below). Target-id-based tab recovery
+                # (reconnecting to the kept tab on recheck) is deferred.
 
                 attention = False
                 try:
-                    response = await page.goto(url, wait_until="domcontentloaded", timeout=(timeout or 45) * 1000)
+                    try:
+                        response = await page.goto(url, wait_until="domcontentloaded", timeout=(timeout or 45) * 1000)
+                    except Exception as e:
+                        raise PageUnloadable(url=url, status_code=None, message=str(e))
                     if response is None:
                         raise EmptyReply(url=url, status_code=None)
 
@@ -155,32 +157,22 @@ class fetcher(Fetcher):
                     self.screenshot = await capture_full_page_async(page, screenshot_format=self.screenshot_format, watch_uuid=watch_uuid)
 
                 except LocalChromeAttentionRequired:
-                    # Keep the page + target-id mapping; only the gate is blocked.
+                    # Keep the page; only the gate is blocked.
                     raise
                 finally:
-                    # Spec 9.2: keep the page + mapping when attention is required;
-                    # close the page + drop the mapping on normal completion/error.
+                    # Spec 9.2: keep the page when attention is required;
+                    # close the page on normal completion/error.
                     if not attention:
                         try:
                             await page.close()
                         except Exception as e:
                             logger.warning(f"Error closing task page: {e}")
-                        finally:
-                            _target_ids.pop(watch_uuid, None)
                     # Always disconnect the CDP client only; never close the
                     # persistent context or Chrome itself.
                     try:
                         await browser.close()
                     except Exception:
                         pass
-
-    async def _read_target_id(self, page):
-        # Playwright exposes a CDP session per page; target id is on the session.
-        try:
-            client = await page.context.new_cdp_session(page)
-            return getattr(client, '_target_id', None)
-        except Exception:
-            return None
 
     async def quit(self, watch=None):
         # Nothing to quit per-task: we only disconnected the CDP client in run().
