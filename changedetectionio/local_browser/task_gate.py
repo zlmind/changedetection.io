@@ -50,3 +50,46 @@ class LocalBrowserTaskGate:
     def release(self) -> None:
         if self._lock is not None and self._lock.locked():
             self._lock.release()
+
+    # --- Attention state (spec 8.2) ---
+    def enter_attention(self, watch_uuid: str) -> None:
+        """Mark that watch_uuid needs manual browser action.
+
+        Releases the serial lock so the worker can exit, but clears the
+        attention event so all subsequent local-chrome tasks queue.
+        """
+        self._ensure()
+        self._attention_watch = watch_uuid
+        self._attention_cleared.clear()
+        self.release()
+
+    def resolve_attention(self) -> None:
+        """User clicked 'handled, recheck' - unblock the queue."""
+        self._ensure()
+        self._attention_watch = None
+        self._attention_cleared.set()
+
+    def cancel_attention(self) -> None:
+        """User clicked 'cancel this check' - unblock the queue."""
+        self._ensure()
+        self._attention_watch = None
+        self._attention_cleared.set()
+
+    def attention_watch_uuid(self) -> Optional[str]:
+        return self._attention_watch
+
+
+# Process-level singleton (spec 8)
+_gate: LocalBrowserTaskGate | None = None
+
+
+def get_gate() -> LocalBrowserTaskGate:
+    global _gate
+    if _gate is None:
+        _gate = LocalBrowserTaskGate()
+    return _gate
+
+
+def reset_gate_for_tests() -> None:
+    global _gate
+    _gate = None
