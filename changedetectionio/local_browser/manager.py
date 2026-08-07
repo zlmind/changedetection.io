@@ -3,6 +3,8 @@
 Process-level singleton accessed via get_manager()/reset_manager_for_tests().
 """
 import os
+import subprocess
+import time
 
 from loguru import logger
 
@@ -47,6 +49,14 @@ def _process_cmdline(pid: int) -> list[str]:
         return []
 
 
+def _terminate_pid(pid: int) -> None:
+    try:
+        import psutil
+        psutil.Process(pid).terminate()
+    except Exception as e:
+        logger.warning(f"Could not terminate PID {pid}: {e}")
+
+
 class LocalChromeManager:
     def __init__(self, datastore_path: str):
         self.datastore_path = datastore_path
@@ -54,6 +64,7 @@ class LocalChromeManager:
         self._pid = None
         self._cdp_port = None
         self._running = False
+        self._chrome_path = None
 
     # --- Chrome executable discovery (spec 7.2) ---
     def find_chrome_executable(self, custom_path: str | None = None) -> str:
@@ -124,3 +135,89 @@ class LocalChromeManager:
             return False
         cmdline = _process_cmdline(pid) or []
         return any(self.profile_dir in arg for arg in cmdline)
+
+    # --- Lifecycle (spec 7.5) ---
+    def ensure_running(self, chrome_path: str) -> int:
+        """Ensure our Chrome is running; (re)launch once if it was closed.
+
+        Returns the CDP port. Raises LocalChromeUnavailable on non-Windows.
+        Does NOT create a temporary profile as a fallback (spec 7.5).
+        """
+        if not is_local_chrome_supported():
+            raise LocalChromeUnavailable("Local Chrome is only supported on Windows.")
+
+        self._chrome_path = chrome_path
+        # Already running and still ours?
+        if self._running and self._pid and self.owns_process(self._pid, chrome_path):
+            return self._cdp_port
+
+        # Launch (or relaunch once after the user closed the window).
+        os.makedirs(self.profile_dir, exist_ok=True)
+        args = self.build_startup_args(chrome_path)
+        proc = subprocess.Popen(args)
+        self._pid = proc.pid
+        self._running = True
+        port = self._wait_for_devtools_port()
+        if not port:
+            self._running = False
+            raise LocalChromeUnavailable(
+                "Chrome started but the DevTools endpoint did not become ready."
+            )
+        self._cdp_port = port
+        return port
+
+    def _wait_for_devtools_port(self, timeout: float = 15.0, interval: float = 0.3) -> int | None:
+        """Poll the DevToolsActivePort file until Chrome writes it (or timeout)."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            port = self.parse_devtools_active_port()
+            if port:
+                return port
+            time.sleep(interval)
+        return None
+
+    def stop(self) -> None:
+        """Stop Chrome only if we still own the process (spec 7.4/7.5)."""
+        if not self._pid:
+            self._running = False
+            return
+        if self.owns_process(self._pid, self._chrome_path or ""):
+            _terminate_pid(self._pid)
+        else:
+            logger.warning(
+                f"Refusing to stop PID {self._pid}: ownership check failed "
+                f"(process gone, exe mismatch, or wrong user-data-dir)."
+            )
+        self._running = False
+        self._pid = None
+        self._cdp_port = None
+
+    def status(self) -> dict:
+        return {
+            'running': self._running and bool(self._pid and _process_exists(self._pid)),
+            'pid': self._pid,
+            'cdp_port': self._cdp_port,
+            'profile_dir': self.profile_dir,
+        }
+
+    def cdp_endpoint(self) -> str:
+        """Loopback CDP URL the fetcher connects to (spec 9.1)."""
+        if not self._cdp_port:
+            raise LocalChromeUnavailable("Local Chrome is not running yet.")
+        return f"http://127.0.0.1:{self._cdp_port}"
+
+
+# --- Process-level singleton (spec 7) ---
+_manager: LocalChromeManager | None = None
+
+
+def get_manager(datastore_path: str | None = None) -> LocalChromeManager:
+    global _manager
+    if _manager is None:
+        _manager = LocalChromeManager(datastore_path=datastore_path or ".")
+    return _manager
+
+
+def reset_manager_for_tests() -> None:
+    global _manager
+    _manager = None

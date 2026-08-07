@@ -118,3 +118,104 @@ def test_owns_process_false_when_user_data_dir_not_in_cmdline(manager, monkeypat
     monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
     monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", "--user-data-dir=C:\\other"])
     assert manager.owns_process(pid=1234, expected_exe=r"C:\chrome.exe") is False
+
+
+def test_ensure_running_starts_chrome_and_reads_port(manager, monkeypatch):
+    started = {}
+    def fake_popen(args, **kwargs):
+        started["args"] = args
+        class _P:
+            pid = 4242
+        return _P()
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    # Simulate Chrome writing the port file after launch.
+    def fake_ensure_port_file(self):
+        os.makedirs(self.profile_dir, exist_ok=True)
+        with open(os.path.join(self.profile_dir, "DevToolsActivePort"), "w") as f:
+            f.write("5050\n/devtools/browser/x\n")
+        return 5050
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", fake_ensure_port_file, raising=True)
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert manager._running is True
+    assert manager._pid == 4242
+    assert manager._cdp_port == 5050
+    assert "--remote-debugging-port=0" in started["args"]
+
+
+def test_ensure_running_is_idempotent_when_already_running(manager, monkeypatch):
+    calls = {"n": 0}
+    def fake_popen(args, **kwargs):
+        calls["n"] += 1
+        class _P:
+            pid = 4242
+        return _P()
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", lambda self: 5050)
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert calls["n"] == 1  # second call did not relaunch
+
+
+def test_ensure_running_restarts_once_when_chrome_was_closed(manager, monkeypatch):
+    launches = {"n": 0}
+    def fake_popen(args, **kwargs):
+        launches["n"] += 1
+        class _P:
+            pid = 7000 + launches["n"]
+        return _P()
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", lambda self: 5050)
+    # First state: manager thinks it ran (pid 7000) but the process is gone.
+    manager._pid = 7000
+    manager._running = True
+    # owns_process returns False because process is gone.
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: False)
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert launches["n"] == 1
+    assert manager._pid == 7001
+
+
+def test_stop_only_kills_owned_process(manager, monkeypatch):
+    killed = []
+    def fake_terminate(pid):
+        killed.append(pid)
+    monkeypatch.setattr(manager_module, "_terminate_pid", fake_terminate)
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+    manager._pid = 9000
+    manager._running = True
+    manager._chrome_path = r"C:\chrome.exe"
+    manager.stop()
+    assert killed == [9000]
+    assert manager._running is False
+
+
+def test_stop_does_not_kill_unowned_process(manager, monkeypatch):
+    killed = []
+    monkeypatch.setattr(manager_module, "_terminate_pid", lambda pid: killed.append(pid))
+    # owns_process False -> must not terminate.
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: False)
+    manager._pid = 9000
+    manager._running = True
+    manager._chrome_path = r"C:\chrome.exe"
+    manager.stop()
+    assert killed == []
+
+
+def test_cdp_endpoint_after_running(manager, monkeypatch):
+    monkeypatch.setattr(manager_module.subprocess, "Popen", lambda args, **kw: type("P", (), {"pid": 7777})())
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", lambda self: 5050)
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert manager.cdp_endpoint() == "http://127.0.0.1:5050"
