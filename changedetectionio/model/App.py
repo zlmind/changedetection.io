@@ -34,7 +34,11 @@ class model(dict):
                     'default_ua': {
                         'html_requests': getenv("DEFAULT_SETTINGS_HEADERS_USERAGENT", DEFAULT_SETTINGS_HEADERS_USERAGENT),
                         'html_webdriver': None,
-                    }
+                    },
+                    'local_chrome': {
+                        'enabled': False,
+                        'chrome_executable': None,
+                    },
                 },
                 'application': {
                     # Custom notification content
