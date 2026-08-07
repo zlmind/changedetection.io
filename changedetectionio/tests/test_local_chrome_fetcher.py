@@ -209,3 +209,39 @@ def test_run_forwards_datastore_path_to_manager(monkeypatch):
     asyncio.run(f.run(url="https://example.com", watch_uuid="w-path"))
 
     assert seen["path"] == r"D:\datastore"
+
+
+def test_ensure_running_happens_inside_gate(monkeypatch):
+    """ensure_running must be reached only AFTER the serial gate is acquired, so
+    two concurrent tasks never double-Popen Chrome into the same profile dir."""
+    from changedetectionio.content_fetchers import local_chrome as mod
+    order = []
+
+    class _FakeMgr:
+        def ensure_running(self, chrome_path):
+            order.append("ensure")
+            return 54321
+        def cdp_endpoint(self):
+            return "http://127.0.0.1:54321"
+        def find_chrome_executable(self, custom_path=None):
+            return r"C:\chrome.exe"
+
+    _install_fakes(monkeypatch, {"page": 0, "context": 0, "browser": 0})
+    monkeypatch.setattr(mod, "get_manager", lambda datastore_path=None: _FakeMgr())
+
+    # Wrap the gate's lock-acquire so we can assert ordering.
+    from changedetectionio.local_browser import task_gate as gate_mod
+    orig_wait = gate_mod.LocalBrowserTaskGate._wait_and_lock
+    async def _recording_wait(self, watch_uuid):
+        order.append("lock")
+        return await orig_wait(self, watch_uuid)
+    monkeypatch.setattr(gate_mod.LocalBrowserTaskGate, "_wait_and_lock", _recording_wait)
+
+    f = mod.fetcher()
+    f._datastore = type("_DS", (), {"data": {'settings': {'requests': {'local_chrome': {'enabled': True, 'chrome_executable': None}}}}, "datastore_path": "."})()
+    f.webdriver_js_execute_code = None
+    f.screenshot_format = "JPEG"
+    asyncio.run(f.run(url="https://example.com", watch_uuid="w-ord"))
+
+    assert order.index("lock") < order.index("ensure"), order
+
