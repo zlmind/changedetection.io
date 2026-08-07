@@ -95,3 +95,13 @@ class ReplyWithContentButNoText(Exception):
         self.html_content = html_content
         self.xpath_data = xpath_data
         return
+
+
+class LocalChromeAttentionRequired(Exception):
+    """A login/security challenge was detected; the tab is kept and the task gate is blocked.
+
+    Carries human-readable trigger reasons (never cookies/headers/form values)."""
+    def __init__(self, reasons, watch_uuid=None):
+        self.reasons = reasons
+        self.watch_uuid = watch_uuid
+        super().__init__("; ".join(reasons))
