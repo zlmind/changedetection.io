@@ -34,3 +34,27 @@ def test_local_chrome_defaults_merged_from_disk():
         app2 = model(datastore_path=path)
         app2['settings']['requests'].update(stored['settings']['requests'])
         assert app2['settings']['requests']['local_chrome']['enabled'] is False
+
+
+def test_is_local_chrome_supported_reflects_platform(monkeypatch):
+    from changedetectionio import local_browser
+    monkeypatch.setattr(local_browser, '_PLATFORM', 'win32')
+    assert local_browser.is_local_chrome_supported() is True
+    monkeypatch.setattr(local_browser, '_PLATFORM', 'linux')
+    assert local_browser.is_local_chrome_supported() is False
+
+
+def test_is_local_chrome_enabled_reads_datastore():
+    from changedetectionio.local_browser import is_local_chrome_enabled
+
+    class _DS:
+        data = {'settings': {'requests': {'local_chrome': {'enabled': True}}}}
+    assert is_local_chrome_enabled(_DS()) is True
+
+    class _DSOff:
+        data = {'settings': {'requests': {'local_chrome': {'enabled': False}}}}
+    assert is_local_chrome_enabled(_DSOff()) is False
+
+    class _DSMissing:
+        data = {'settings': {'requests': {}}}
+    assert is_local_chrome_enabled(_DSMissing()) is False
