@@ -1,6 +1,8 @@
 from blinker import signal
 from .processors.exceptions import ProcessorException
 import changedetectionio.content_fetchers.exceptions as content_fetchers_exceptions
+from changedetectionio.content_fetchers.exceptions import LocalChromeAttentionRequired
+from changedetectionio.local_browser.manager import LocalChromeUnavailable
 from changedetectionio.processors.text_json_diff.processor import FilterNotFoundInResponse
 from changedetectionio import html_tools
 from changedetectionio import worker_pool
@@ -399,6 +401,19 @@ async def async_update_worker(worker_id, q, notification_q, app, datastore, exec
                     datastore.update_watch(uuid=uuid, update_obj={'last_error': err_text})
                     process_changedetection_results = False
                     logger.error(f"Exception (BrowserStepsInUnsupportedFetcher) reached processing watch UUID: {uuid}")
+
+                except LocalChromeAttentionRequired as e:
+                    # Tab is kept open; task gate is logically blocked. Tell the
+                    # user to handle it in the browser; do NOT fall back.
+                    err_text = "Local Chrome needs attention: {}. Open the browser, complete the login/verification, then click 'recheck'.".format("; ".join(e.reasons))
+                    datastore.update_watch(uuid=uuid, update_obj={'last_error': err_text})
+                    set_watch_minitext_status(watch, "Needs browser action")
+                    process_changedetection_results = False
+
+                except LocalChromeUnavailable as e:
+                    datastore.update_watch(uuid=uuid, update_obj={'last_error': str(e)})
+                    set_watch_minitext_status(watch, "Local Chrome unavailable")
+                    process_changedetection_results = False
 
                 except Exception as e:
                     import traceback

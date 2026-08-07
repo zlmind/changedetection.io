@@ -220,6 +220,11 @@ class difference_detection_processor():
         # can read it directly instead of re-deriving it from the fetcher class name.
         self.fetcher.backend_name = prefer_fetch_backend
 
+        # Local Chrome fetcher needs the datastore to read its enabled flag and
+        # chrome_executable path. Harmless for fetchers without a _datastore attr.
+        if hasattr(self.fetcher, '_datastore'):
+            self.fetcher._datastore = self.datastore
+
         if self.watch.has_browser_steps:
             self.fetcher.browser_steps = browser_steps_get_valid_steps(self.watch.get('browser_steps', []))
             self.fetcher.browser_steps_screenshot_path = os.path.join(self.datastore.datastore_path, self.watch.get('uuid'))

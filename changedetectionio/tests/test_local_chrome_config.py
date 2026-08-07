@@ -79,3 +79,26 @@ def test_resolve_content_fetcher_finds_html_local_chrome():
     obj, name, url = content_fetchers.resolve_content_fetcher(watch=w, datastore=_DS())
     assert obj is lc_fetcher
     assert name == 'html_local_chrome'
+
+
+def test_local_chrome_attention_message_is_human_readable():
+    from changedetectionio.content_fetchers.exceptions import LocalChromeAttentionRequired
+    e = LocalChromeAttentionRequired(["URL entered an authentication path", "HTTP status 401"], watch_uuid="w")
+    msg = str(e)
+    assert "authentication path" in msg
+    assert "401" in msg
+
+
+def test_local_chrome_unavailable_message():
+    from changedetectionio.local_browser.manager import LocalChromeUnavailable
+    e = LocalChromeUnavailable("Local Chrome is disabled in Settings.")
+    assert "disabled" in str(e)
+
+
+def test_fetcher_datastore_injected_in_call_browser():
+    """call_browser() must set fetcher._datastore so the fetcher can read the enabled flag."""
+    import inspect
+    from changedetectionio.processors.base import difference_detection_processor
+    src = inspect.getsource(difference_detection_processor.call_browser)
+    assert "_datastore" in src
+    assert "self.datastore" in src
