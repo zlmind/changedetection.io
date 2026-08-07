@@ -358,7 +358,8 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         mgr = get_manager(datastore.datastore_path)
         try:
             lc = datastore.data['settings']['requests'].get('local_chrome', {})
-            mgr.ensure_running(chrome_path=mc_path(lc, mgr))
+            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc, mgr))
+            mgr.ensure_running(chrome_path=chrome_path)
             flash(gettext("Local Chrome is running. Switch to its window to log in."), 'notice')
         except Exception as e:
             flash(gettext("Could not start Local Chrome: {}").format(str(e)), "error")
@@ -374,7 +375,8 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         try:
             mgr.stop()
             lc = datastore.data['settings']['requests'].get('local_chrome', {})
-            mgr.ensure_running(chrome_path=mc_path(lc, mgr))
+            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc, mgr))
+            mgr.ensure_running(chrome_path=chrome_path)
             flash(gettext("Local Chrome restarted."), 'notice')
         except Exception as e:
             flash(gettext("Could not restart Local Chrome: {}").format(str(e)), "error")
