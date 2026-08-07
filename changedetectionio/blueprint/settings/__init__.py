@@ -164,11 +164,6 @@ def construct_blueprint(datastore: ChangeDetectionStore):
                 datastore.data['settings']['requests'].update(form.data['requests'])
                 datastore.commit()
 
-                # local_chrome is a nested sub-form; merge its fields explicitly.
-                lc = form.data.get('requests', {}).get('local_chrome') or {}
-                datastore.data['settings']['requests'].setdefault('local_chrome', {})
-                datastore.data['settings']['requests']['local_chrome'].update(lc)
-
                 # Clear all checksums to force reprocessing with new settings
                 # Global settings can affect watch behavior (filters, rendering, etc.)
                 datastore.clear_all_last_checksums()
