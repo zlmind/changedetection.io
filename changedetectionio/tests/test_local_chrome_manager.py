@@ -1,6 +1,7 @@
 import os
 import pytest
 
+from changedetectionio.local_browser import manager as manager_module
 from changedetectionio.local_browser.manager import LocalChromeManager
 
 
@@ -91,3 +92,29 @@ def test_parse_devtools_active_port_garbage_returns_none(manager, tmp_path):
     with open(path, "w", encoding="utf-8") as f:
         f.write("not-a-number\n")
     assert manager.parse_devtools_active_port() is None
+
+
+def test_owns_process_requires_pid_exe_and_user_data_dir(manager, monkeypatch):
+    # All three checks pass -> True
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+    assert manager.owns_process(pid=1234, expected_exe=r"C:\chrome.exe") is True
+
+
+def test_owns_process_false_when_pid_missing(manager, monkeypatch):
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: False)
+    assert manager.owns_process(pid=1234, expected_exe=r"C:\chrome.exe") is False
+
+
+def test_owns_process_false_when_exe_mismatch(manager, monkeypatch):
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\something-else.exe")
+    assert manager.owns_process(pid=1234, expected_exe=r"C:\chrome.exe") is False
+
+
+def test_owns_process_false_when_user_data_dir_not_in_cmdline(manager, monkeypatch):
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", "--user-data-dir=C:\\other"])
+    assert manager.owns_process(pid=1234, expected_exe=r"C:\chrome.exe") is False

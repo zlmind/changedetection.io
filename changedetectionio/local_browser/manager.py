@@ -23,6 +23,30 @@ class LocalChromeUnavailable(Exception):
     """Raised when Local Chrome cannot run (non-Windows, disabled, not found)."""
 
 
+def _process_exists(pid: int) -> bool:
+    try:
+        import psutil
+        return psutil.pid_exists(pid)
+    except Exception:
+        return False
+
+
+def _process_exe(pid: int) -> str | None:
+    try:
+        import psutil
+        return psutil.Process(pid).exe()
+    except Exception:
+        return None
+
+
+def _process_cmdline(pid: int) -> list[str]:
+    try:
+        import psutil
+        return psutil.Process(pid).cmdline()
+    except Exception:
+        return []
+
+
 class LocalChromeManager:
     def __init__(self, datastore_path: str):
         self.datastore_path = datastore_path
@@ -86,3 +110,17 @@ class LocalChromeManager:
             return int(first_line)
         except (ValueError, OSError):
             return None
+
+    # --- Process ownership (spec 7.4) ---
+    def owns_process(self, pid: int, expected_exe: str) -> bool:
+        """True only when PID exists, exe matches, and cmdline has our user-data-dir.
+
+        We never kill by process name and never delete Chrome lock files; if any
+        check fails we report inconsistency instead of terminating the process.
+        """
+        if not pid or not _process_exists(pid):
+            return False
+        if (_process_exe(pid) or "").lower() != (expected_exe or "").lower():
+            return False
+        cmdline = _process_cmdline(pid) or []
+        return any(self.profile_dir in arg for arg in cmdline)
