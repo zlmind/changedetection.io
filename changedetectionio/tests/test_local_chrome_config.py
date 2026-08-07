@@ -66,6 +66,16 @@ def test_html_local_chrome_hidden_from_default_available_fetchers():
     assert 'html_local_chrome' not in names  # gated; views add it when enabled
 
 
+def test_settings_adds_local_chrome_choice_before_validation():
+    import inspect
+    from changedetectionio.blueprint import settings as settings_module
+
+    src = inspect.getsource(settings_module.construct_blueprint)
+    assert src.index(
+        "_add_local_chrome_fetch_backend_choice(form)"
+    ) < src.index("if request.method == 'POST':")
+
+
 def test_resolve_content_fetcher_finds_html_local_chrome():
     """Already-configured watches still resolve to the class (so it can error cleanly)."""
     from changedetectionio import content_fetchers

@@ -15,6 +15,14 @@ from changedetectionio.local_browser import is_local_chrome_supported, is_local_
 from changedetectionio.local_browser.manager import get_manager
 
 
+def _add_local_chrome_fetch_backend_choice(form):
+    from changedetectionio.content_fetchers.local_chrome import fetcher as lc_fetcher
+    choices = list(form.application.form.fetch_backend.choices)
+    if 'html_local_chrome' not in [c[0] for c in choices]:
+        choices.append(('html_local_chrome', lc_fetcher.fetcher_description))
+    form.application.form.fetch_backend.choices = choices
+
+
 def construct_blueprint(datastore: ChangeDetectionStore):
     from changedetectionio.llm.evaluator import is_llm_features_disabled
     settings_blueprint = Blueprint('settings', __name__, template_folder="templates")
@@ -78,6 +86,10 @@ def construct_blueprint(datastore: ChangeDetectionStore):
             form.requests.form.proxy.choices = []
             for p in datastore.proxy_list:
                 form.requests.form.proxy.choices.append(tuple((p, datastore.proxy_list[p]['label'])))
+
+        # Append before validation so an enabled Local Chrome backend can be submitted.
+        if is_local_chrome_supported() and is_local_chrome_enabled(datastore):
+            _add_local_chrome_fetch_backend_choice(form)
 
         if request.method == 'POST':
             # Password unset is a GET, but we can lock the session to a salted env password to always need the password
@@ -254,14 +266,6 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         llm_effective_max_input_chars = _get_max_input_chars(datastore)
         # Cost display: only when user configured their own key (not hosted/operator-managed)
         llm_show_costs = not llm_env_configured
-
-        # Append html_local_chrome to the fetch-backend choices only when available.
-        if is_local_chrome_supported() and is_local_chrome_enabled(datastore):
-            from changedetectionio.content_fetchers.local_chrome import fetcher as lc_fetcher
-            choices = list(form.application.form.fetch_backend.choices)
-            if 'html_local_chrome' not in [c[0] for c in choices]:
-                choices.append(('html_local_chrome', lc_fetcher.fetcher_description))
-            form.application.form.fetch_backend.choices = choices
 
         local_chrome_profile_dir = ''
         local_chrome_status = 'Not supported on this platform'
