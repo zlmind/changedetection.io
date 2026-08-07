@@ -2,7 +2,7 @@ import os
 import pytest
 
 from changedetectionio.local_browser import manager as manager_module
-from changedetectionio.local_browser.manager import LocalChromeManager
+from changedetectionio.local_browser.manager import LocalChromeManager, LocalChromeUnavailable
 
 
 @pytest.fixture(autouse=True)
@@ -219,3 +219,20 @@ def test_cdp_endpoint_after_running(manager, monkeypatch):
     monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
     manager.ensure_running(chrome_path=r"C:\chrome.exe")
     assert manager.cdp_endpoint() == "http://127.0.0.1:5050"
+
+
+def test_wait_for_devtools_port_returns_none_on_timeout(manager, monkeypatch):
+    # parse_devtools_active_port always returns None -> the poll loop times out.
+    monkeypatch.setattr(LocalChromeManager, "parse_devtools_active_port", lambda self: None)
+    # No-op sleep so the test is fast.
+    monkeypatch.setattr(manager_module.time, "sleep", lambda s: None)
+    result = manager._wait_for_devtools_port(timeout=0.01, interval=0.001)
+    assert result is None
+
+
+def test_ensure_running_raises_when_devtools_port_not_ready(manager, monkeypatch):
+    monkeypatch.setattr(manager_module.subprocess, "Popen", lambda args, **kw: type("P", (), {"pid": 4242})())
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", lambda self: None)
+    with pytest.raises(LocalChromeUnavailable):
+        manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert manager._running is False

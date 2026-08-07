@@ -207,7 +207,10 @@ class LocalChromeManager:
         return f"http://127.0.0.1:{self._cdp_port}"
 
 
-# --- Process-level singleton (spec 7) ---
+# Process-level singleton. Intended to be created once at startup; afterwards
+# all html_local_chrome tasks are serialized through LocalBrowserTaskGate, so
+# ensure_running()/stop() are not reached concurrently and no lock is needed
+# here. reset_manager_for_tests() is for test isolation only.
 _manager: LocalChromeManager | None = None
 
 
