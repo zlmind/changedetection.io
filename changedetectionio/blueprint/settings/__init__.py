@@ -346,7 +346,7 @@ def construct_blueprint(datastore: ChangeDetectionStore):
 
         return redirect(url_for('watchlist.index'))
 
-    def mc_path(lc_cfg, mgr):
+    def mc_path(lc_cfg):
         return lc_cfg.get('chrome_executable') or None
 
     @settings_blueprint.route("/local-chrome/open", methods=['GET'])
@@ -358,7 +358,7 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         mgr = get_manager(datastore.datastore_path)
         try:
             lc = datastore.data['settings']['requests'].get('local_chrome', {})
-            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc, mgr))
+            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc))
             mgr.ensure_running(chrome_path=chrome_path)
             flash(gettext("Local Chrome is running. Switch to its window to log in."), 'notice')
         except Exception as e:
@@ -375,7 +375,7 @@ def construct_blueprint(datastore: ChangeDetectionStore):
         try:
             mgr.stop()
             lc = datastore.data['settings']['requests'].get('local_chrome', {})
-            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc, mgr))
+            chrome_path = mgr.find_chrome_executable(custom_path=mc_path(lc))
             mgr.ensure_running(chrome_path=chrome_path)
             flash(gettext("Local Chrome restarted."), 'notice')
         except Exception as e:

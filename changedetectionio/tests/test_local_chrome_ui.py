@@ -14,7 +14,7 @@ def test_settings_page_lists_local_chrome_choice_when_enabled(client, live_serve
     from changedetectionio.flask_app import datastore as ds
     ds.data['settings']['requests']['local_chrome']['enabled'] = True
     res = client.get('/settings')
-    assert b'Local Chrome' in res.data
+    assert b'html_local_chrome' in res.data
 
 
 def test_settings_post_persists_local_chrome_enabled(client, live_server, monkeypatch):
@@ -22,8 +22,8 @@ def test_settings_post_persists_local_chrome_enabled(client, live_server, monkey
     from changedetectionio.flask_app import datastore as ds
     monkeypatch.setattr(local_browser, '_PLATFORM', 'win32')
     res = client.post('/settings', data={
-        'local_chrome-enabled': 'y',
-        'local_chrome-chrome_executable': '',
+        'requests-local_chrome-enabled': 'y',
+        'requests-local_chrome-chrome_executable': '',
         'save_button': 'Save',
     }, follow_redirects=True)
     assert res.status_code == 200
