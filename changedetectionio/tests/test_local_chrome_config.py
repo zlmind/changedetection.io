@@ -102,3 +102,20 @@ def test_fetcher_datastore_injected_in_call_browser():
     src = inspect.getsource(difference_detection_processor.call_browser)
     assert "_datastore" in src
     assert "self.datastore" in src
+
+
+def test_global_settings_form_has_local_chrome_fields():
+    from changedetectionio import forms
+    import tempfile
+    from changedetectionio.model.App import model
+    with tempfile.TemporaryDirectory() as p:
+        default = model(datastore_path=p)
+        data = {
+            'application': default['settings']['application'],
+            'requests': default['settings']['requests'],
+            'llm': {'api_key': ''},
+        }
+        form = forms.globalSettingsForm(data=data, extra_notification_tokens={})
+        assert hasattr(form.requests.form, 'local_chrome')
+        assert hasattr(form.requests.form.local_chrome.form, 'enabled')
+        assert hasattr(form.requests.form.local_chrome.form, 'chrome_executable')

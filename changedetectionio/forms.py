@@ -1038,6 +1038,12 @@ class DefaultUAInputForm(Form):
     if os.getenv("PLAYWRIGHT_DRIVER_URL") or os.getenv("WEBDRIVER_URL"):
         html_webdriver = StringField(_l('Chrome requests'), validators=[validators.Optional()], render_kw={"placeholder": "<default>"})
 
+class LocalChromeSettingsForm(Form):
+    enabled = BooleanField(_l('Enable Local Chrome (persistent profile)'), default=False, validators=[validators.Optional()])
+    chrome_executable = StringField(_l('Google Chrome executable path (optional)'),
+                                    validators=[validators.Optional()],
+                                    render_kw={"placeholder": _l("Leave blank to auto-detect")})
+
 # datastore.data['settings']['requests']..
 class globalSettingsRequestForm(Form):
     time_between_check = RequiredFormField(TimeBetweenCheckForm, label=_l('Time Between Check'))
@@ -1059,6 +1065,8 @@ class globalSettingsRequestForm(Form):
 
     extra_proxies = FieldList(FormField(SingleExtraProxy), min_entries=5)
     extra_browsers = FieldList(FormField(SingleExtraBrowser), min_entries=5)
+
+    local_chrome = FormField(LocalChromeSettingsForm, label=_l("Local Chrome - Persistent Profile"))
 
     default_ua = FormField(DefaultUAInputForm, label=_l("Default User-Agent overrides"))
 
