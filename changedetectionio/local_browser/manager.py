@@ -50,3 +50,22 @@ class LocalChromeManager:
             "Google Chrome was not found in the standard Windows install locations. "
             "Set a custom chrome_executable in Settings."
         )
+
+    # --- Startup arguments (spec 7.3) ---
+    def build_startup_args(self, chrome_path: str) -> list[str]:
+        """Build the Chrome command line.
+
+        - dedicated --user-data-dir (never the user's daily profile)
+        - visible window (we never pass --headless)
+        - remote debugging restricted to loopback, dynamic port (0 = let OS choose)
+        - does NOT inherit the CHROME_OPTIONS env var used by the Selenium fetcher
+        """
+        return [
+            chrome_path,
+            f"--user-data-dir={self.profile_dir}",
+            "--remote-debugging-address=127.0.0.1",
+            "--remote-debugging-port=0",
+            # Restore the window if it was closed; keep first-run noise down.
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]

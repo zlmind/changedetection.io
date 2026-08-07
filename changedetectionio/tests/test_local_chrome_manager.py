@@ -49,3 +49,24 @@ def test_find_chrome_raises_when_not_found_anywhere(manager, monkeypatch):
     monkeypatch.setattr(os.path, "isfile", lambda p: False)
     with pytest.raises(FileNotFoundError):
         manager.find_chrome_executable(custom_path=None)
+
+
+def test_profile_dir_is_under_datastore(manager):
+    assert manager.profile_dir.endswith("browser-profile")
+    assert os.path.dirname(manager.profile_dir) == manager.datastore_path
+
+
+def test_build_startup_args_uses_dedicated_profile_and_loopback(manager, tmp_path, monkeypatch):
+    args = manager.build_startup_args(chrome_path="C:\\chrome.exe")
+    assert args[0] == "C:\\chrome.exe"
+    joined = " ".join(args)
+    assert f"--user-data-dir={manager.profile_dir}" in joined
+    assert "--remote-debugging-address=127.0.0.1" in joined
+    assert "--remote-debugging-port=0" in joined
+    # Must NOT inherit CHROME_OPTIONS env-based args.
+    monkeypatch.setenv("CHROME_OPTIONS", "--no-sandbox\n--headless")
+    args2 = manager.build_startup_args(chrome_path="C:\\chrome.exe")
+    assert "--no-sandbox" not in " ".join(args2)
+    assert "--headless" not in " ".join(args2)
+    # Visible window: no --headless flag added by us.
+    assert "--headless" not in " ".join(args)
