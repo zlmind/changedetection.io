@@ -36,9 +36,39 @@ def _strong_signals(url, status_code, page_html):
     return reasons
 
 
+# Weak-signal text fragments (Chinese + English). A single match alone is NOT enough.
+_WEAK_TEXT_PATTERNS = re.compile(
+    r'(请登录|请先登录|登录后查看|验证身份|安全验证|身份验证|滑块验证|短信验证|'
+    r'please\s+log\s*in|sign\s*in\s+to\s+continue|verify\s+your\s+identity|'
+    r'authentication\s+required|are\s+you\s+a\s+robot)',
+    re.IGNORECASE,
+)
+
+# Weak-signal title fragments (independent from body text).
+_WEAK_TITLE_PATTERNS = re.compile(
+    r'(登录|验证|安全|login|verify|authentication|access\s+denied)',
+    re.IGNORECASE,
+)
+
+
+def _weak_signals(url, status_code, page_title, page_text, page_html) -> list:
+    reasons = []
+    if _WEAK_TEXT_PATTERNS.search(page_text or ''):
+        reasons.append("Page text contains a common login/verification phrase")
+    if _WEAK_TITLE_PATTERNS.search(page_title or ''):
+        reasons.append("Page title suggests an authentication/verification page")
+    # Reasons only ever describe the *category* of signal, never page content,
+    # so cookies / tokens / form values can never leak (spec 10/14).
+    return reasons
+
+
 def detect_auth_challenge(*, url, status_code, page_title, page_text, page_html) -> dict:
     strong = _strong_signals(url, status_code, page_html)
     if strong:
         return {'required': True, 'reasons': strong}
-    # Weak signals handled in Task 11.
+
+    weak = _weak_signals(url, status_code, page_title, page_text, page_html)
+    if len(weak) >= 2:
+        return {'required': True, 'reasons': weak}
+
     return {'required': False, 'reasons': []}
