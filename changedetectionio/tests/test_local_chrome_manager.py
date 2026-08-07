@@ -31,11 +31,11 @@ def test_find_chrome_rejects_missing_custom_path(manager):
 def test_find_chrome_searches_default_windows_locations(manager, monkeypatch):
     seen = []
 
-    def fake_exists(path):
+    def fake_isfile(path):
         seen.append(path)
         return path.endswith("Program Files\\Google\\Chrome\\Application\\chrome.exe")
 
-    monkeypatch.setattr(os.path, "exists", fake_exists)
+    monkeypatch.setattr(os.path, "isfile", fake_isfile)
     found = manager.find_chrome_executable(custom_path=None)
     assert found.endswith("Program Files\\Google\\Chrome\\Application\\chrome.exe")
     # Must have checked the common locations in order.
@@ -44,6 +44,6 @@ def test_find_chrome_searches_default_windows_locations(manager, monkeypatch):
 
 
 def test_find_chrome_raises_when_not_found_anywhere(manager, monkeypatch):
-    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(os.path, "isfile", lambda p: False)
     with pytest.raises(FileNotFoundError):
         manager.find_chrome_executable(custom_path=None)

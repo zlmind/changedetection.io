@@ -40,13 +40,13 @@ class LocalChromeManager:
             raise LocalChromeUnavailable("Local Chrome is only supported on Windows in Phase 1.")
 
         if custom_path:
-            # Custom path must exist on disk.
-            if not os.path.exists(custom_path):
+            # Custom path must be an existing plain file.
+            if not os.path.isfile(custom_path):
                 raise FileNotFoundError(f"Configured chrome_executable does not exist: {custom_path}")
             return custom_path
 
         for candidate in _DEFAULT_CHROME_PATHS_WIN:
-            if os.path.exists(candidate):
+            if os.path.isfile(candidate):
                 return candidate
 
         raise FileNotFoundError(
