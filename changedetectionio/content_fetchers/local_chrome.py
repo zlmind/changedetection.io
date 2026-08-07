@@ -66,7 +66,12 @@ class fetcher(Fetcher):
         self._check_available()
         self.watch_uuid = watch_uuid
 
-        manager = get_manager()
+        # The singleton's profile_dir must derive from the datastore path (spec 7.1),
+        # not the process CWD - the worker may be the first to touch the manager.
+        manager = get_manager(
+            datastore_path=self._datastore.datastore_path
+            if self._datastore is not None else None
+        )
         gate = get_gate()
 
         chrome_path = None
@@ -90,6 +95,8 @@ class fetcher(Fetcher):
                     )
                 context = browser.contexts[0]
                 page = await context.new_page()
+                # iterate_browser_steps() drives the page through self.page.
+                self.page = page
                 # Phase 1: the attention tab is kept open in Chrome (see the
                 # `attention` flag below). Target-id-based tab recovery
                 # (reconnecting to the kept tab on recheck) is deferred.

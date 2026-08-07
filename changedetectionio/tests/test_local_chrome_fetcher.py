@@ -158,3 +158,54 @@ def test_run_keeps_page_on_attention(monkeypatch):
     from changedetectionio.local_browser.task_gate import get_gate
     assert get_gate().attention_watch_uuid() == "w-attn"  # gate in attention state
     get_gate().resolve_attention()  # cleanup
+
+
+def test_run_sets_self_page_for_browser_steps(monkeypatch):
+    """self.page must be set to the task page so iterate_browser_steps() drives it
+    (the base Fetcher reads self.page; without it steps silently no-op)."""
+    from changedetectionio.content_fetchers import local_chrome as mod
+    closed = {"page": 0, "context": 0, "browser": 0}
+    _install_fakes(monkeypatch, closed)
+
+    f = mod.fetcher()
+    f.webdriver_js_execute_code = None
+    f.screenshot_format = "JPEG"
+    f.browser_steps = []  # avoid actually iterating; we only assert self.page
+    asyncio.run(f.run(url="https://example.com/page", watch_uuid="w-steps"))
+
+    assert f.page is not None
+
+
+def test_run_forwards_datastore_path_to_manager(monkeypatch):
+    """The manager singleton must be created with the datastore path so profile_dir
+    derives from the datastore (spec 7.1), not the process CWD."""
+    from changedetectionio.content_fetchers import local_chrome as mod
+    seen = {"path": None}
+
+    class _FakeMgr:
+        def ensure_running(self, chrome_path):
+            return 54321
+        def cdp_endpoint(self):
+            return "http://127.0.0.1:54321"
+        def find_chrome_executable(self, custom_path=None):
+            return r"C:\chrome.exe"
+
+    # Install hermetic gate/pwapi fakes first, then capture get_manager's arg.
+    _install_fakes(monkeypatch, {"page": 0, "context": 0, "browser": 0})
+    monkeypatch.setattr(
+        mod, "get_manager",
+        lambda datastore_path=None: seen.__setitem__("path", datastore_path) or _FakeMgr(),
+    )
+
+    class _DS:
+        def __init__(self, path):
+            self.datastore_path = path
+            self.data = {'settings': {'requests': {'local_chrome': {'enabled': True, 'chrome_executable': None}}}}
+
+    f = mod.fetcher()
+    f._datastore = _DS(r"D:\datastore")
+    f.webdriver_js_execute_code = None
+    f.screenshot_format = "JPEG"
+    asyncio.run(f.run(url="https://example.com", watch_uuid="w-path"))
+
+    assert seen["path"] == r"D:\datastore"
