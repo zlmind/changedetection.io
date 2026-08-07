@@ -215,16 +215,19 @@ Fetcher 通过 Playwright `connect_over_cdp()` 连接 LocalChromeManager 提供�
 每次任务：
 
 1. 在持久 Context 中创建新 Page。
-2. 标记并记录该 Page 对应的 Watch。
-3. 执行导航和提取。
-4. 正常完成或普通错误时关闭该 Page。
-5. 需要人工操作时保留该 Page。
+2. 通过 CDP 读取该 Page 的 Target ID。
+3. 在运行时映射中记录 `watch_uuid -> target_id`。
+4. 执行导航和提取。
+5. 正常完成或普通错误时关闭该 Page，并删除映射。
+6. 需要人工操作时保留 Page 和映射。
+
+重新检查或取消时，Fetcher 重新连接 CDP，枚举当前 Context 的 Page，并通过 Target ID 定位保留标签页。该映射只保存在内存中；changedetection.io 正常退出会关闭自有 Chrome，因此不需要跨进程恢复暂停页面。
 
 Fetcher 不关闭持久 Context，也不关闭 Chrome。结束 Playwright 客户端时只断开本次 CDP 通信。
 
 ### 9.3 复用能力
 
-新 Fetcher应复用现有无状态能力：
+新 Fetcher 应复用现有无状态能力：
 
 - Browser Steps 动作。
 - 页面等待和自定义 JavaScript。
@@ -254,7 +257,7 @@ Fetcher 不关闭持久 Context，也不关闭 Chrome。结束 Playwright 客户
 - 页面标题或主体内容与目标明显不一致。
 - 页面只有通用框架，目标筛选器不存在。
 
-一个强信号，或多个相互独立的弱信号，进入 `ATTENTION_REQUIRED`。
+一个强信号，或两个及以上相互独立的弱信号，进入 `ATTENTION_REQUIRED`。
 
 单个普通文本关键词不得直接触发暂停。检测结果必须记录触发原因，但日志不得包含 Cookie、认证 Header 或表单值。
 
@@ -282,11 +285,11 @@ ATTENTION_REQUIRED
 
 ### 12.1 持久配置
 
-第一阶段只增加：
+第一阶段在 `datastore.data['settings']['requests']['local_chrome']` 下只增加：
 
 ```text
-local_chrome.enabled: bool
-local_chrome.chrome_executable: optional string
+enabled: bool
+chrome_executable: optional string
 ```
 
 Profile 路径由 datastore 路径派生，不作为自由输入配置。
