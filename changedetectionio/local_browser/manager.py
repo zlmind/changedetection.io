@@ -4,6 +4,7 @@ Process-level singleton accessed via get_manager()/reset_manager_for_tests().
 """
 import os
 import subprocess
+import threading
 import time
 
 from loguru import logger
@@ -65,6 +66,10 @@ class LocalChromeManager:
         self._cdp_port = None
         self._running = False
         self._chrome_path = None
+        # Worker tasks serialize through the gate, but the settings 'Restart'
+        # route runs on a Flask thread outside it; this lock keeps the lifecycle
+        # atomic against that cross-thread Popen/stop (spec 7.5).
+        self._lifecycle_lock = threading.Lock()
 
     # --- Chrome executable discovery (spec 7.2) ---
     def find_chrome_executable(self, custom_path: str | None = None) -> str:
@@ -146,25 +151,26 @@ class LocalChromeManager:
         if not is_local_chrome_supported():
             raise LocalChromeUnavailable("Local Chrome is only supported on Windows.")
 
-        self._chrome_path = chrome_path
-        # Already running and still ours?
-        if self._running and self._pid and self.owns_process(self._pid, chrome_path):
-            return self._cdp_port
+        with self._lifecycle_lock:
+            self._chrome_path = chrome_path
+            # Already running and still ours?
+            if self._running and self._pid and self.owns_process(self._pid, chrome_path):
+                return self._cdp_port
 
-        # Launch (or relaunch once after the user closed the window).
-        os.makedirs(self.profile_dir, exist_ok=True)
-        args = self.build_startup_args(chrome_path)
-        proc = subprocess.Popen(args)
-        self._pid = proc.pid
-        self._running = True
-        port = self._wait_for_devtools_port()
-        if not port:
-            self._running = False
-            raise LocalChromeUnavailable(
-                "Chrome started but the DevTools endpoint did not become ready."
-            )
-        self._cdp_port = port
-        return port
+            # Launch (or relaunch once after the user closed the window).
+            os.makedirs(self.profile_dir, exist_ok=True)
+            args = self.build_startup_args(chrome_path)
+            proc = subprocess.Popen(args)
+            self._pid = proc.pid
+            self._running = True
+            port = self._wait_for_devtools_port()
+            if not port:
+                self._running = False
+                raise LocalChromeUnavailable(
+                    "Chrome started but the DevTools endpoint did not become ready."
+                )
+            self._cdp_port = port
+            return port
 
     def _wait_for_devtools_port(self, timeout: float = 15.0, interval: float = 0.3) -> int | None:
         """Poll the DevToolsActivePort file until Chrome writes it (or timeout)."""
@@ -178,19 +184,20 @@ class LocalChromeManager:
 
     def stop(self) -> None:
         """Stop Chrome only if we still own the process (spec 7.4/7.5)."""
-        if not self._pid:
+        with self._lifecycle_lock:
+            if not self._pid:
+                self._running = False
+                return
+            if self.owns_process(self._pid, self._chrome_path or ""):
+                _terminate_pid(self._pid)
+            else:
+                logger.warning(
+                    f"Refusing to stop PID {self._pid}: ownership check failed "
+                    f"(process gone, exe mismatch, or wrong user-data-dir)."
+                )
             self._running = False
-            return
-        if self.owns_process(self._pid, self._chrome_path or ""):
-            _terminate_pid(self._pid)
-        else:
-            logger.warning(
-                f"Refusing to stop PID {self._pid}: ownership check failed "
-                f"(process gone, exe mismatch, or wrong user-data-dir)."
-            )
-        self._running = False
-        self._pid = None
-        self._cdp_port = None
+            self._pid = None
+            self._cdp_port = None
 
     def status(self) -> dict:
         return {
@@ -208,9 +215,9 @@ class LocalChromeManager:
 
 
 # Process-level singleton. Intended to be created once at startup; afterwards
-# all html_local_chrome tasks are serialized through LocalBrowserTaskGate, so
-# ensure_running()/stop() are not reached concurrently and no lock is needed
-# here. reset_manager_for_tests() is for test isolation only.
+# all html_local_chrome tasks are serialized through LocalBrowserTaskGate, and
+# the manager's own _lifecycle_lock guards against the settings 'Restart' route
+# racing a worker Popen/stop. reset_manager_for_tests() is for test isolation only.
 _manager: LocalChromeManager | None = None
 
 

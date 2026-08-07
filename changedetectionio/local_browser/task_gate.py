@@ -18,7 +18,7 @@ from typing import Optional
 # Polling interval while waiting for the serial lock / attention to clear.
 # The gate is only ever held for the duration of one browser task, so a short
 # poll keeps wakeups cheap while remaining loop-agnostic.
-_POLL_INTERVAL = 0.05
+_POLL_INTERVAL = 0.01
 
 
 class LocalBrowserTaskGate:

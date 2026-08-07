@@ -79,12 +79,16 @@ class fetcher(Fetcher):
             lc = self._datastore.data['settings']['requests'].get('local_chrome', {})
             chrome_path = lc.get('chrome_executable')
         chrome_path = manager.find_chrome_executable(custom_path=chrome_path)
-        manager.ensure_running(chrome_path=chrome_path)
 
         # Phase 1: the persistent profile owns cookies/UA, so per-watch
         # request_headers/method/body/is_binary are intentionally not applied
         # (the proxy_override is also ignored - see __init__).
+        #
+        # ensure_running() lives INSIDE the gate so two concurrent local-chrome
+        # tasks never both Popen Chrome into the same profile dir. The settings
+        # 'Restart browser' action serializes through the same gate.
         async with gate.acquire(watch_uuid):
+            manager.ensure_running(chrome_path=chrome_path)
             from playwright.async_api import async_playwright
             async with async_playwright() as p:
                 browser = await p.chromium.connect_over_cdp(manager.cdp_endpoint(), timeout=60000)
