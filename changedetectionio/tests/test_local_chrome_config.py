@@ -129,3 +129,19 @@ def test_global_settings_form_has_local_chrome_fields():
         assert hasattr(form.requests.form, 'local_chrome')
         assert hasattr(form.requests.form.local_chrome.form, 'enabled')
         assert hasattr(form.requests.form.local_chrome.form, 'chrome_executable')
+
+
+def test_minitext_status_sanitizer_keeps_local_chrome_messages():
+    # set_watch_minitext_status sanitizes to safe punctuation; ensure our
+    # Local Chrome status strings survive it unchanged.
+    from changedetectionio.worker import set_watch_minitext_status
+
+    class _W(dict):
+        def __init__(self):
+            super().__init__(uuid='w')
+
+    w = _W()
+    set_watch_minitext_status(w, "Needs browser action")
+    assert w['__check_status'] == "Needs browser action"
+    set_watch_minitext_status(w, "Local Chrome unavailable")
+    assert w['__check_status'] == "Local Chrome unavailable"
