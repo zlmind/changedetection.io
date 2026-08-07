@@ -1,7 +1,6 @@
 import os
 import pytest
 
-from changedetectionio.local_browser import manager as manager_module
 from changedetectionio.local_browser.manager import LocalChromeManager
 
 
@@ -13,7 +12,9 @@ def prepare_test_function():
 
 @pytest.fixture
 def manager(tmp_path, monkeypatch):
-    monkeypatch.setattr(manager_module, '_PLATFORM', 'win32')
+    # Patch the _PLATFORM that is_local_chrome_supported() actually reads, so
+    # these tests pass on Linux CI too - not just on a Windows dev machine.
+    monkeypatch.setattr('changedetectionio.local_browser._PLATFORM', 'win32')
     return LocalChromeManager(datastore_path=str(tmp_path))
 
 

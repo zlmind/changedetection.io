@@ -3,13 +3,10 @@
 Process-level singleton accessed via get_manager()/reset_manager_for_tests().
 """
 import os
-import sys
 
 from loguru import logger
 
 from changedetectionio.local_browser import is_local_chrome_supported
-
-_PLATFORM = sys.platform
 
 # Common Windows install locations, searched in this order.
 _DEFAULT_CHROME_PATHS_WIN = [
