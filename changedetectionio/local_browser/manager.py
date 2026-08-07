@@ -39,7 +39,7 @@ class LocalChromeManager:
         if custom_path:
             # Custom path must be an existing plain file.
             if not os.path.isfile(custom_path):
-                raise FileNotFoundError(f"Configured chrome_executable does not exist: {custom_path}")
+                raise FileNotFoundError(f"Configured chrome_executable is not an existing file: {custom_path}")
             return custom_path
 
         for candidate in _DEFAULT_CHROME_PATHS_WIN:

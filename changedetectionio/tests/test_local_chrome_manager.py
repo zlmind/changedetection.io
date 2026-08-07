@@ -30,18 +30,19 @@ def test_find_chrome_rejects_missing_custom_path(manager):
 
 
 def test_find_chrome_searches_default_windows_locations(manager, monkeypatch):
+    from changedetectionio.local_browser.manager import _DEFAULT_CHROME_PATHS_WIN
     seen = []
 
     def fake_isfile(path):
         seen.append(path)
-        return path.endswith("Program Files\\Google\\Chrome\\Application\\chrome.exe")
+        # Pretend the 2nd default location (Program Files) exists.
+        return path == _DEFAULT_CHROME_PATHS_WIN[1]
 
     monkeypatch.setattr(os.path, "isfile", fake_isfile)
     found = manager.find_chrome_executable(custom_path=None)
-    assert found.endswith("Program Files\\Google\\Chrome\\Application\\chrome.exe")
-    # Must have checked the common locations in order.
-    assert any("AppData" in p for p in seen)
-    assert any("Program Files (x86)" in p for p in seen) or any("Program Files\\Google" in p for p in seen)
+    assert found == _DEFAULT_CHROME_PATHS_WIN[1]
+    # Checked locations in order and stopped at the first hit (candidate 0 miss, candidate 1 hit).
+    assert seen == _DEFAULT_CHROME_PATHS_WIN[:2]
 
 
 def test_find_chrome_raises_when_not_found_anywhere(manager, monkeypatch):
