@@ -141,6 +141,13 @@ def sigshutdown_handler(_signo, _stack_frame):
     # With immediate persistence, all data is already saved
     logger.success('All data already persisted (immediate commits enabled).')
 
+    # Stop the Local Chrome we own (if any). No-op when not started/unsupported.
+    try:
+        from changedetectionio.local_browser.manager import get_manager
+        get_manager().stop()
+    except Exception as e:
+        logger.debug(f"Local Chrome stop on shutdown: {e}")
+
     sys.exit()
 
 def print_help():
