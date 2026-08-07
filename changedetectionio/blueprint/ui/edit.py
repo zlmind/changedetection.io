@@ -164,6 +164,19 @@ def construct_blueprint(datastore: ChangeDetectionStore, update_q, queuedWatchMe
         for p in datastore.extra_browsers:
             form.fetch_backend.choices.append(p)
 
+        # Local Chrome is only a selectable backend when Windows-supported and enabled.
+        from changedetectionio.local_browser import is_local_chrome_supported, is_local_chrome_enabled
+        local_chrome_available = is_local_chrome_supported() and is_local_chrome_enabled(datastore)
+        if local_chrome_available:
+            from changedetectionio.content_fetchers.local_chrome import fetcher as lc_fetcher
+            if 'html_local_chrome' not in [c[0] for c in form.fetch_backend.choices]:
+                form.fetch_backend.choices.append(('html_local_chrome', lc_fetcher.fetcher_description))
+
+        # A watch pinned to html_local_chrome while the backend is unavailable must
+        # surface a clear error: there is no automatic fallback (spec 13).
+        watch_uses_local_chrome = (default.get('fetch_backend') == 'html_local_chrome')
+        local_chrome_unavailable = watch_uses_local_chrome and not local_chrome_available
+
         form.fetch_backend.choices.append(("system", gettext('System settings default')))
 
         # form.browser_steps[0] can be assumed that we 'goto url' first
@@ -351,6 +364,7 @@ def construct_blueprint(datastore: ChangeDetectionStore, update_q, queuedWatchMe
                 # LLM intent context
                 'llm_configured': bool(_get_llm_config(datastore)),
                 'llm_group_overrides': _resolve_llm_group_overrides(watch, datastore),
+                'local_chrome_unavailable': local_chrome_unavailable,
             }
 
             included_content = None
