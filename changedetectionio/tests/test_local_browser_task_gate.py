@@ -94,3 +94,35 @@ def test_attention_watch_uuid_tracked(gate):
     assert gate.attention_watch_uuid() == "watch-X"
     gate.resolve_attention()
     assert gate.attention_watch_uuid() is None
+
+
+def test_waiter_queued_before_attention_does_not_slip_through(gate):
+    """A waiter already queued on the lock when enter_attention fires must NOT
+    run until resolve_attention - it must re-check the attention event after
+    acquiring the lock."""
+    log = []
+
+    async def holder():
+        async with gate.acquire("watch-A"):
+            log.append("A-start")
+            await asyncio.sleep(0.05)  # let B queue on the lock while A holds it
+            gate.enter_attention("watch-A")  # clear event; A still holds lock
+            log.append("A-attention")
+            # exiting the async with releases A's lock via __aexit__
+
+    async def waiter():
+        async with gate.acquire("watch-B"):
+            log.append("B-start")
+
+    async def main():
+        a = asyncio.create_task(holder())
+        await asyncio.sleep(0.02)  # let A acquire and hold
+        b = asyncio.create_task(waiter())  # B queues on the lock (event still set)
+        await asyncio.sleep(0.05)
+        # B must NOT have run - attention was entered while B was queued.
+        assert "B-start" not in log
+        gate.resolve_attention()
+        await asyncio.gather(a, b)
+        assert "B-start" in log
+
+    asyncio.run(main())

@@ -42,10 +42,16 @@ class LocalBrowserTaskGate:
         return LocalBrowserTaskGate._Acquired(self, watch_uuid)
 
     async def _wait_and_lock(self, watch_uuid: str) -> None:
-        # Wait while another watch is in the attention state (blocks everyone).
-        while not self._attention_cleared.is_set():
-            await self._attention_cleared.wait()
-        await self._lock.acquire()
+        while True:
+            # Wait while some watch is in the attention state (blocks everyone).
+            while not self._attention_cleared.is_set():
+                await self._attention_cleared.wait()
+            await self._lock.acquire()
+            # Re-check after acquiring: enter_attention may have fired while we
+            # were queued on the lock. If so, release and re-wait.
+            if self._attention_cleared.is_set():
+                break
+            self._lock.release()
 
     def release(self) -> None:
         if self._lock is not None and self._lock.locked():
@@ -55,13 +61,13 @@ class LocalBrowserTaskGate:
     def enter_attention(self, watch_uuid: str) -> None:
         """Mark that watch_uuid needs manual browser action.
 
-        Releases the serial lock so the worker can exit, but clears the
-        attention event so all subsequent local-chrome tasks queue.
+        Clears the attention event so all subsequent local-chrome tasks queue.
+        Does NOT release the serial lock here - the holding worker releases it
+        via __aexit__ when it raises and exits the `async with` block.
         """
         self._ensure()
         self._attention_watch = watch_uuid
         self._attention_cleared.clear()
-        self.release()
 
     def resolve_attention(self) -> None:
         """User clicked 'handled, recheck' - unblock the queue."""
