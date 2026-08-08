@@ -36,7 +36,7 @@ class model(dict):
                         'html_webdriver': None,
                     },
                     'local_chrome': {
-                        'enabled': False,
+                        'enabled': True,
                         'chrome_executable': None,
                     },
                 },
@@ -47,7 +47,7 @@ class model(dict):
                     'api_access_token_enabled': True,
                     'base_url' : None,
                     'empty_pages_are_a_change': False,
-                    'fetch_backend': getenv("DEFAULT_FETCH_BACKEND", "html_requests"),
+                    'fetch_backend': getenv("DEFAULT_FETCH_BACKEND", "html_local_chrome"),
                     'filter_failure_notification_threshold_attempts': _FILTER_FAILURE_THRESHOLD_ATTEMPTS_DEFAULT,
                     'global_ignore_text': [], # List of text to ignore when calculating the comparison checksum
                     'global_subtractive_selectors': [],

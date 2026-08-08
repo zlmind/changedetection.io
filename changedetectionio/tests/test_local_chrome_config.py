@@ -20,7 +20,7 @@ def test_local_chrome_defaults_present():
     with tempfile.TemporaryDirectory() as path:
         app = model(datastore_path=path)
         lc = app['settings']['requests']['local_chrome']
-        assert lc['enabled'] is False
+        assert lc['enabled'] is True
         assert lc['chrome_executable'] is None
 
 
@@ -33,7 +33,7 @@ def test_local_chrome_defaults_merged_from_disk():
         # dict, confirming a pre-local_chrome config won't clobber the new defaults.
         app2 = model(datastore_path=path)
         app2['settings']['requests'].update(stored['settings']['requests'])
-        assert app2['settings']['requests']['local_chrome']['enabled'] is False
+        assert app2['settings']['requests']['local_chrome']['enabled'] is True
 
 
 def test_is_local_chrome_supported_reflects_platform(monkeypatch):

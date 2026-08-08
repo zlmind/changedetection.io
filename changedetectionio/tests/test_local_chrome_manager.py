@@ -158,6 +158,7 @@ def test_ensure_running_is_idempotent_when_already_running(manager, monkeypatch)
     monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
     monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
     monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+    monkeypatch.setattr(LocalChromeManager, "_port_open", lambda self, port, timeout=2.0: True)
 
     manager.ensure_running(chrome_path=r"C:\chrome.exe")
     manager.ensure_running(chrome_path=r"C:\chrome.exe")
@@ -181,6 +182,30 @@ def test_ensure_running_restarts_once_when_chrome_was_closed(manager, monkeypatc
     manager.ensure_running(chrome_path=r"C:\chrome.exe")
     assert launches["n"] == 1
     assert manager._pid == 7001
+
+
+def test_ensure_running_relaunches_when_cdp_port_is_dead(manager, monkeypatch):
+    """The process may still exist (or the PID be reused) while its CDP port
+    is gone - e.g. Chrome was killed and the PID recycled. ensure_running
+    must relaunch instead of returning the stale _cdp_port."""
+    launches = {"n": 0}
+    def fake_popen(args, **kwargs):
+        launches["n"] += 1
+        return type("P", (), {"pid": 8000 + launches["n"]})()
+    monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(LocalChromeManager, "_wait_for_devtools_port", lambda self: 5051)
+    # Process checks pass (PID exists, exe+cmdline match) BUT the port is dead.
+    monkeypatch.setattr(manager_module, "_process_exists", lambda pid: True)
+    monkeypatch.setattr(manager_module, "_process_exe", lambda pid: r"C:\chrome.exe")
+    monkeypatch.setattr(manager_module, "_process_cmdline", lambda pid: [r"C:\chrome.exe", f"--user-data-dir={manager.profile_dir}"])
+    monkeypatch.setattr(LocalChromeManager, "_port_open", lambda self, port, timeout=2.0: False)
+
+    manager._pid = 8000
+    manager._running = True
+    manager._cdp_port = 59078  # stale port
+    manager.ensure_running(chrome_path=r"C:\chrome.exe")
+    assert launches["n"] == 1
+    assert manager._cdp_port == 5051
 
 
 def test_stop_only_kills_owned_process(manager, monkeypatch):

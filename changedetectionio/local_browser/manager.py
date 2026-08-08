@@ -128,6 +128,17 @@ class LocalChromeManager:
             return None
 
     # --- Process ownership (spec 7.4) ---
+    def _port_open(self, port: int, timeout: float = 2.0) -> bool:
+        """True when something is listening on the loopback CDP port."""
+        if not port:
+            return False
+        import socket
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+                return True
+        except OSError:
+            return False
+
     def owns_process(self, pid: int, expected_exe: str) -> bool:
         """True only when PID exists, exe matches, and cmdline has our user-data-dir.
 
@@ -153,8 +164,9 @@ class LocalChromeManager:
 
         with self._lifecycle_lock:
             self._chrome_path = chrome_path
-            # Already running and still ours?
-            if self._running and self._pid and self.owns_process(self._pid, chrome_path):
+            # Already running and still ours, and its CDP port is actually live?
+            if (self._running and self._pid and self.owns_process(self._pid, chrome_path)
+                    and self._port_open(self._cdp_port)):
                 return self._cdp_port
 
             # Launch (or relaunch once after the user closed the window).
@@ -177,7 +189,9 @@ class LocalChromeManager:
         deadline = time.time() + timeout
         while time.time() < deadline:
             port = self.parse_devtools_active_port()
-            if port:
+            # Ignore a stale DevToolsActivePort file whose port is no longer
+            # listening (e.g. a leftover from a killed Chrome instance).
+            if port and self._port_open(port):
                 return port
             time.sleep(interval)
         return None
